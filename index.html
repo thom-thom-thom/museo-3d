@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Museo de Fotos 3D - Estilo Doom</title>
+    <!-- Three.js CDN for 3D rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Hide scrollbars */
+            font-family: 'Inter', sans-serif;
+            background-color: #000; /* Black background behind canvas */
+        }
+        canvas {
+            display: block; /* Remove extra space below canvas */
+            width: 100vw; /* Canvas takes full viewport width */
+            height: 100vh; /* Canvas takes full viewport height */
+            cursor: none; /* Hide default cursor to avoid distraction */
+        }
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            text-align: center;
+            z-index: 10;
+        }
+        #instructions p {
+            margin: 5px 0;
+        }
+        @media (max-width: 768px) {
+            #instructions {
+                font-size: 0.8rem;
+                padding: 8px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- The canvas element will be added dynamically by Three.js -->
+
+    <!-- Instructions overlay -->
+    <div id="instructions">
+        <p><strong>¡Explora tu Museo de Fotos 3D!</strong></p>
+        <p><strong>Escritorio:</strong></p>
+        <p><strong>W A S D / Flechas:</strong> Moverse</p>
+        <p><strong>Movimiento del Ratón:</strong> Mirar alrededor (haz clic en el museo para activar)</p>
+        <p><strong>Móvil:</strong></p>
+        <p><strong>Arrastrar Pantalla:</strong> Moverse y mirar (horizontal para girar, vertical para avanzar/retroceder)</p>
+    </div>
+
+    <script>
+        // Global variables for Three.js scene components
+        let scene, camera, renderer;
+
+        // Player configuration
+        let player = {
+            height: 1.8,    // Player eye height from the ground
+            speed: 0.1,     // Movement speed
+            turnSpeed: 0.002 // Rotation speed for mouse/touch
+        };
+
+        // Keyboard state tracking
+        let keyboard = {};
+        // Mouse state tracking for looking around
+        let mouse = {
+            prevX: 0,      // Previous mouse X position
+            prevY: 0       // Previous mouse Y position
+        };
+        // Touch state tracking for mobile controls
+        let touch = {
+            startX: 0,      // Initial touch X position
+            startY: 0,      // Initial touch Y position
+            isMoving: false // True if a touch is currently dragging
+        };
+
+        /**
+         * Initializes the 3D scene, camera, renderer, and game objects.
+         */
+        function init() {
+            // 1. Create the Scene
+            scene = new THREE.Scene();
+
+            // 2. Create the Camera (PerspectiveCamera for a 3D view)
+            // Field of view (FOV), aspect ratio, near clipping plane, far clipping plane
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            // Set initial camera position at player's height
+            camera.position.set(0, player.height, 0);
+
+            // 3. Create the Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true }); // Enable anti-aliasing for smoother edges
+            renderer.setSize(window.innerWidth, window.innerHeight); // Set renderer size to full window
+            renderer.setClearColor(0x87CEEB); // Set sky blue background color (sky)
+            document.body.appendChild(renderer.domElement); // Add the canvas to the HTML body
+
+            // 4. Create the Floor (Green)
+            // A large flat plane geometry
+            const floorGeometry = new THREE.PlaneGeometry(200, 200, 1, 1);
+            // Basic material with green color, double-sided to be visible from both sides
+            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x00FF00, side: THREE.DoubleSide });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = Math.PI / 2; // Rotate the plane to lie flat on the XZ plane
+            floor.position.y = 0;           // Position at ground level
+            scene.add(floor); // Add floor to the scene
+
+            // 5. Add Basic Lighting
+            // Ambient light provides a general illumination, no distinct source
+            const ambientLight = new THREE.AmbientLight(0x404040); // Soft white light
+            scene.add(ambientLight);
+            // Directional light acts like a sun, casting parallel rays
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5); // White light, medium intensity
+            directionalLight.position.set(1, 1, 0).normalize(); // Position and normalize direction
+            scene.add(directionalLight);
+
+            // 6. Create Photo Walls (the "museum" part!)
+            const textureLoader = new THREE.TextureLoader();
+            const photoHeight = 3; // Standard height for our photo frames
+
+            // Define your photos here!
+            // You can replace these placeholder URLs with actual image URLs (e.g., from Google Photos, Imgur, etc.)
+            // Make sure the images are publicly accessible for the browser to load them.
+            const photos = [
+                { url: 'https://placehold.co/800x600/0000FF/FFFFFF?text=Aventura+1', position: { x: 15, z: -20 }, rotationY: Math.PI / 4 },
+                { url: 'https://placehold.co/800x600/FF0000/FFFFFF?text=Recuerdo+2', position: { x: -20, z: 15 }, rotationY: -Math.PI / 4 },
+                { url: 'https://placehold.co/800x600/00FF00/FFFFFF?text=Viaje+3', position: { x: 0, z: -30 }, rotationY: 0 },
+                { url: 'https://placehold.co/800x600/FFFF00/000000?text=Amigos+4', position: { x: 30, z: 0 }, rotationY: -Math.PI / 2 },
+                { url: 'https://placehold.co/800x600/FF00FF/FFFFFF?text=Celebracion+5', position: { x: -30, z: 0 }, rotationY: Math.PI / 2 },
+                { url: 'https://placehold.co/800x600/800080/FFFFFF?text=Evento+6', position: { x: 0, z: 30 }, rotationY: Math.PI },
+                { url: 'https://placehold.co/800x600/FFA500/FFFFFF?text=Paisaje+7', position: { x: 25, z: 25 }, rotationY: Math.PI * 0.75 },
+                { url: 'https://placehold.co/800x600/A52A2A/FFFFFF?text=Mascota+8', position: { x: -25, z: -25 }, rotationY: Math.PI * -0.25 }
+            ];
+
+            photos.forEach(photoData => {
+                // Load the texture for the photo
+                textureLoader.load(photoData.url, (texture) => {
+                    // Check if image loading failed (e.g., broken URL, CORS issues)
+                    if (!texture || !texture.image) {
+                        console.warn(`Failed to load image: ${photoData.url}. Skipping this photo.`);
+                        return; // Skip this photo if it failed to load
+                    }
+                    
+                    // Calculate aspect ratio to maintain image proportions
+                    const imageAspect = texture.image.width / texture.image.height;
+                    const planeWidth = photoHeight * imageAspect; // Calculate width based on aspect ratio
+
+                    // Create a plane geometry for the photo
+                    const photoGeometry = new THREE.PlaneGeometry(planeWidth, photoHeight);
+                    // Create a material using the loaded texture
+                    const photoMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+                    const photoMesh = new THREE.Mesh(photoGeometry, photoMaterial);
+
+                    // Position the photo frame, centered vertically slightly above player's eye level
+                    // (player.height + 0.5 positions the center of a 3-unit height photo at y=2.3)
+                    photoMesh.position.set(photoData.position.x, player.height + 0.5, photoData.position.z);
+                    
+                    // Rotate the photo frame if a rotation is specified
+                    if (photoData.rotationY !== undefined) {
+                        photoMesh.rotation.y = photoData.rotationY;
+                    }
+
+                    scene.add(photoMesh); // Add the photo to the scene
+                }, undefined, (err) => {
+                    // Error callback for texture loading
+                    console.error('An error happened loading a texture:', err);
+                    // You could add a fallback image or a visual indicator here
+                });
+            });
+
+            // Set up Event Listeners
+            window.addEventListener('resize', onWindowResize, false); // Handle window resizing
+            document.addEventListener('keydown', onKeyDown, false);   // Handle key presses
+            document.addEventListener('keyup', onKeyUp, false);       // Handle key releases
+
+            // Mouse events for desktop camera control
+            renderer.domElement.addEventListener('mousemove', onMouseMove, false);
+            // Request pointer lock for a better first-person experience (hides cursor and provides raw movement)
+            renderer.domElement.addEventListener('click', () => {
+                renderer.domElement.requestPointerLock();
+            });
+
+            // Touch events for mobile camera and movement control
+            renderer.domElement.addEventListener('touchstart', onTouchStart, false);
+            renderer.domElement.addEventListener('touchmove', onTouchMove, false);
+            renderer.domElement.addEventListener('touchend', onTouchEnd, false);
+        }
+
+        /**
+         * Handles window resizing to keep the camera aspect ratio and renderer size correct.
+         */
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight; // Update camera aspect ratio
+            camera.updateProjectionMatrix(); // Recalculate projection matrix
+            renderer.setSize(window.innerWidth, window.innerHeight); // Resize renderer
+        }
+
+        /**
+         * Stores the state of pressed keys in the `keyboard` object.
+         * @param {KeyboardEvent} event - The keydown event.
+         */
+        function onKeyDown(event) {
+            keyboard[event.key.toLowerCase()] = true; // Use lowercase for consistency (e.g., 'w' vs 'W')
+        }
+
+        /**
+         * Stores the state of released keys in the `keyboard` object.
+         * @param {KeyboardEvent} event - The keyup event.
+         */
+        function onKeyUp(event) {
+            keyboard[event.key.toLowerCase()] = false;
+        }
+
+        /**
+         * Handles mouse movement for camera rotation.
+         * Uses event.movementX/Y for raw mouse input when pointer lock is active,
+         * or falls back to clientX/Y difference otherwise.
+         * @param {MouseEvent} event - The mousemove event.
+         */
+        function onMouseMove(event) {
+            let deltaX, deltaY;
+
+            // Use movementX/Y if Pointer Lock API is active for raw input
+            if (document.pointerLockElement === renderer.domElement) {
+                deltaX = event.movementX;
+                deltaY = event.movementY;
+            } else {
+                // Fallback for when pointer lock is not active (e.g., initial state or escaped)
+                deltaX = event.clientX - mouse.prevX;
+                deltaY = event.clientY - mouse.prevY;
+            }
+            
+            // Rotate camera horizontally (yaw) based on horizontal mouse movement
+            camera.rotation.y -= deltaX * player.turnSpeed;
+
+            // Rotate camera vertically (pitch) based on vertical mouse movement
+            // Clamp the rotation to prevent the camera from flipping upside down
+            camera.rotation.x -= deltaY * player.turnSpeed;
+            camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x)); // Clamp between -90 and +90 degrees
+
+            // Update previous mouse positions for the next frame if not using pointer lock
+            if (document.pointerLockElement !== renderer.domElement) {
+                mouse.prevX = event.clientX;
+                mouse.prevY = event.clientY;
+            }
+        }
+
+        /**
+         * Initializes touch tracking on touch start.
+         * @param {TouchEvent} event - The touchstart event.
+         */
+        function onTouchStart(event) {
+            if (event.touches.length === 1) { // Only handle single touch for now
+                touch.startX = event.touches[0].clientX;
+                touch.startY = event.touches[0].clientY;
+                touch.isMoving = true;
+            }
+            event.preventDefault(); // Prevent default browser actions like scrolling
+        }
+
+        /**
+         * Handles touch movement for both camera rotation and player movement.
+         * Horizontal drag controls turning, vertical drag controls forward/backward movement.
+         * @param {TouchEvent} event - The touchmove event.
+         */
+        function onTouchMove(event) {
+            if (!touch.isMoving || event.touches.length === 0) return;
+
+            let deltaX = event.touches[0].clientX - touch.startX;
+            let deltaY = event.touches[0].clientY - touch.startY;
+
+            // Horizontal drag for camera rotation (yaw)
+            camera.rotation.y -= deltaX * player.turnSpeed * 2; // Adjust sensitivity for touch rotation
+
+            // Vertical drag for forward/backward movement
+            let moveDirection = new THREE.Vector3();
+            camera.getWorldDirection(moveDirection); // Get the camera's current forward direction
+            moveDirection.y = 0; // Keep movement on the XZ plane
+            moveDirection.normalize();
+
+            // Move in the calculated direction. Negative deltaY moves forward when dragging finger up.
+            camera.position.addScaledVector(moveDirection, -deltaY * player.speed * 0.5); // Adjust sensitivity for touch movement
+
+            // Update start points for the next touchmove event to accumulate movement
+            touch.startX = event.touches[0].clientX;
+            touch.startY = event.touches[0].clientY;
+        }
+
+        /**
+         * Resets touch tracking on touch end.
+         */
+        function onTouchEnd() {
+            touch.isMoving = false;
+        }
+
+        /**
+         * Updates the player's position and camera rotation based on keyboard input.
+         */
+        function updatePlayerMovement() {
+            let moveSpeed = player.speed;
+            let turnSpeed = player.turnSpeed * 100; // Keyboard turn speed is faster than mouse/touch
+
+            // Get the current forward direction of the camera (where the player is looking)
+            let direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            direction.y = 0; // Ensure movement is only on the horizontal plane (XZ)
+            direction.normalize(); // Normalize to ensure consistent speed
+
+            // Calculate the right direction (for strafing)
+            let right = new THREE.Vector3();
+            right.crossVectors(camera.up, direction); // Cross product of camera's up and forward gives right vector
+
+            // Handle forward/backward movement (W/S or ArrowUp/ArrowDown)
+            if (keyboard['w'] || keyboard['arrowup']) {
+                camera.position.addScaledVector(direction, moveSpeed);
+            }
+            if (keyboard['s'] || keyboard['arrowdown']) {
+                camera.position.addScaledVector(direction, -moveSpeed);
+            }
+
+            // Handle strafing (A/D)
+            if (keyboard['a']) { // Strafe left
+                camera.position.addScaledVector(right, -moveSpeed);
+            }
+            if (keyboard['d']) { // Strafe right
+                camera.position.addScaledVector(right, moveSpeed);
+            }
+
+            // Handle horizontal rotation (yaw) using left/right arrow keys
+            if (keyboard['arrowleft']) {
+                camera.rotation.y += turnSpeed;
+            }
+            if (keyboard['arrowright']) {
+                camera.rotation.y -= turnSpeed;
+            }
+
+            // Ensure the camera always stays at player's predefined height (prevents falling through floor)
+            camera.position.y = player.height;
+        }
+
+        /**
+         * Main animation loop.
+         * This function is called repeatedly to update the game state and render the scene.
+         */
+        function animate() {
+            requestAnimationFrame(animate); // Request the next frame
+
+            updatePlayerMovement(); // Update player position and rotation
+
+            renderer.render(scene, camera); // Render the scene from the camera's perspective
+        }
+
+        // Start the game when the entire window content has loaded
+        window.onload = function() {
+            init();    // Initialize the Three.js scene
+            animate(); // Start the animation loop
+        };
+    </script>
+</body>
+</html>
